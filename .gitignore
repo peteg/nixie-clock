@@ -1,0 +1,5 @@
+*.o
+junk
+*/gen/*
+/remote/remote
+remote_daemon
