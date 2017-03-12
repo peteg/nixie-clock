@@ -47,7 +47,7 @@ LINK_PRU0_FW=
 all: $(TARGETS)
 	@echo '-	generated firmware: $^'
 
-$(GEN_DIR)/main_pru0.object: main_pru0.c resource_table_pru0.h
+$(GEN_DIR)/main_pru0.object: main_pru0.c resource_table_pru0.h pru_defs.h
 	@mkdir -p $(GEN_DIR)
 	$(PRU_CGT)/bin/clpru --include_path=$(PRU_CGT)/include $(INCLUDE) $(CFLAGS) -fe $@ $<
 
