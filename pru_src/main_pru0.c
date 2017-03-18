@@ -1,13 +1,19 @@
 /*
- * FIXME describe
+ * PRU0: hard real-time multiplexing of the nixie tubes.
  *
- * FIXME: perhaps halt other PRU?
+ * FIXME fast PRU GPIOs via register 30.
+ * RPMSG: FIXME linux standard communication between PRU and ARM host.
+ * FIXME: perhaps halt PRU1?
+ * FIXME signal halt from ARM somehow
  */
 
 #include <stdlib.h>
-
 #include <stdbool.h>
 #include <stdint.h>
+
+/* PRU GPIO registers. */
+volatile register uint32_t __R30;
+volatile register uint32_t __R31;
 
 #include <pru_cfg.h>
 
@@ -15,54 +21,10 @@
 #include <rsc_types.h>
 #include <pru_rpmsg.h>
 
-// FIXME cleanup
 #include "resource_table_pru0.h"
 #include "pru_defs.h"
 
-/* PRU GPIO registers. */
-volatile register uint32_t __R30;
-volatile register uint32_t __R31;
-
-// printf is too big for the PRU. Library?
-char *
-itoa(int i, char *b)
-{
-  char *p = b;
-  int j;
-
-  if(i < 0) {
-    *p = '-';
-    p++;
-    i *= -1;
-  }
-
-  p++;
-  for(j = i; j != 0; j /= 10) {
-    p++;
-  };
-  *p = '\0';
-
-  do {
-    *--p = '0' + i % 10;
-    i /= 10;
-  } while(i);
-
-  return b;
-}
-
-
-/* FIXME shared with the ARM controller? */
-
-#define NUM_DIGITS 4
-
-/* The Russian 74141-equiv blanks for digits A-F */
-#define BLANK_DIGIT 0xA
-
-typedef uint8_t digit_t;
-typedef uint8_t digit_val_t;
-
-/* Set the top bit to make a digit flash. */
-#define FLASHING (1 << 7)
+#include "clock.h"
 
 /* **************************************** */
 /* FIXME make the HT accessible to the PRU. */
@@ -82,10 +44,6 @@ ht_off(void)
 /* The Russian 74141-equiv is hooked up to the lowest nibble of the
  * PRU0 GPIO pins. The next greatest nibble sets which tube is on
  * (one-hot). */
-#define DIGIT_VAL(x) ((x) & 0xF)
-#define DIGIT_MASK   0xFFF0
-#define TUBE_VAL(x)  (1 << (((x) & 0xF) + 4))
-#define TUBE_MASK    0xFF0F
 
 static inline void
 tubes_all_off(void)
@@ -96,12 +54,12 @@ tubes_all_off(void)
 static inline void
 tubes_set_val(digit_t digit, digit_val_t v, unsigned int delay)
 {
-  __R30 = DIGIT_VAL(v);
+  __R30 = v & 0xF;
   /* FIXME sleep here long enough for the 74141-equiv to settle. 100us? */
   __delay_cycles(20000);
-  __R30 |= TUBE_VAL(digit);
+  __R30 |= (1 << ((digit & 0xF) + 4));
 
-  /* FIXME cheesy hack: __delay_cycles requires a constant */
+  /* Hack: __delay_cycles requires a constant. */
   while(delay-- > 0) {
     __delay_cycles(10000);
   }
@@ -110,8 +68,6 @@ tubes_set_val(digit_t digit, digit_val_t v, unsigned int delay)
 /* **************************************** */
 
 /* The brightness of the nixies is controlled by PWM. */
-
-#define DIGIT_VAL_MASK 0x0F
 
 typedef enum {
   ds_steady,
@@ -178,7 +134,7 @@ digit_task(digit_t digit)
   case ds_steady:
     if(d->next_val != d->pending_val) {
       d->next_val = d->pending_val;
-      d->digit_state = d->pending_val & FLASHING ? ds_flashing_fade_out : ds_crossfading;
+      d->digit_state = d->pending_val & FLASH_DIGIT ? ds_flashing_fade_out : ds_crossfading;
       d->fade_index = 0;
     }
     tubes_set_val(digit, d->displayed_val, DELAY_MAXIMUM);
@@ -244,9 +200,6 @@ display_init(void)
 /* RPMSG communication with the ARM host. */
 
 // FIXME only one instance so just use globals
-
-// FIXME cannot be defined inside main (on the stack?)
-static uint8_t payload[RPMSG_BUF_SIZE];
 static struct pru_rpmsg_transport transport;
 
 #define HOST_ARM_TO_PRU0 HOST0_INT
@@ -282,41 +235,40 @@ rpmsg_poll(void)
   /* Check bit 30 of register R31 to see if the ARM has kicked us */
   if(check_host_int(HOST_ARM_TO_PRU0)) {
     uint16_t src, dst, len;
+    // Don't put this on the stack.
+    static uint8_t payload[RPMSG_BUF_SIZE];
 
     /* Clear the event status */
     CT_INTC.SICR_bit.STS_CLR_IDX = SE_ARM_TO_PRU0;
 
     /* Receive all available messages, multiple messages can be sent per kick */
     while(pru_rpmsg_receive(&transport, &src, &dst, payload, &len) == PRU_RPMSG_SUCCESS) {
-      static uint32_t xxx = 0;
-      char *buf = "xxxxxxxxxx";
+      static uint8_t halt[] = HALT;
+      const unsigned int length = sizeof(halt) / sizeof(uint8_t);
+      unsigned int i;
 
-      itoa(xxx, buf);
-      xxx++;
-      pru_rpmsg_send(&transport, dst, src, buf, 10);
-      pru_rpmsg_send(&transport, dst, src, payload, len);
-
-      for(int i = 0; i < 4; i++) {
-        // FIXME take care of flashing top bit
-        display_set_pending_val(i, payload[i] - '0');
+      for(i = 0; i < length; i++) {
+        if(halt[i] != payload[i]) {
+          break;
+        }
       }
 
-      ht_off();
-      tubes_all_off();
-      /* FIXME set the PRU GPIO to output if we can. */
-      tubes_all_off();
-      ht_on();
+      if(i >= length) {
+        return false;
+      }
 
+      for(i = 0; i < NUM_DIGITS; i++) {
+        display_set_pending_val(i, payload[i] - '0');
+      }
     }
 
     return true;
   } else {
-    return false;
+    return true;
   }
 }
 
 /* **************************************** */
-// FIXME experiments
 
 void
 main(void)
@@ -328,17 +280,19 @@ main(void)
   display_init();
   rpmsg_init();
 
-  /* FIXME initial display */
-  for(unsigned int i = 0; i < NUM_DIGITS; i++) {
-    display_set_pending_val(i, i);
+  /* Initial display */
+  for(digit_t i = 0; i < NUM_DIGITS; i++) {
+    display_set_pending_val(i, BLANK_DIGIT);
   }
 
-  while(1) {
+  for(bool cont = true; cont; ) {
     for(int i = 0; i < NUM_DIGITS; i++) {
-      rpmsg_poll();
+      cont = rpmsg_poll();
       digit_task(i);
     }
   }
 
+  ht_off();
+  tubes_all_off();
   __halt();
 }

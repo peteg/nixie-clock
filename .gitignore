@@ -1,5 +1,5 @@
 *.o
 junk
 */gen/*
-/remote/remote
-remote_daemon
+/controller_src/remote_daemon
+/clock/clock

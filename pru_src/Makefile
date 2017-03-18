@@ -4,8 +4,11 @@
 PRU_CGT=/usr/share/ti/cgt-pru
 PRU_SSP=/usr/lib/ti/pru-software-support-package
 
-SUDO=sudo
+# No need to hack device trees if we use
+#    https://github.com/cdsteinkuehler/beaglebone-universal-io
 CONFIG_PIN=/opt/beaglebone-universal-io/config-pin
+
+SUDO=sudo
 
 HEADER=P9_
 # For PRU0 we use P9_91/P9_92 to set pruout for pins 41 and 42
@@ -20,7 +23,7 @@ GEN_DIR=gen
 
 LINKER_COMMAND_FILE=./AM335x_PRU.cmd
 LIBS=--library=$(PRU_SSP)/lib/rpmsg_lib.lib
-INCLUDE=--include_path=$(PRU_SSP)/include --include_path=$(PRU_SSP)/include/am335x
+INCLUDE=--include_path=$(PRU_SSP)/include --include_path=$(PRU_SSP)/include/am335x --include_path=../include
 STACK_SIZE=0x100
 HEAP_SIZE=0x100
 
