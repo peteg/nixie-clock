@@ -2,8 +2,10 @@
  * FIXME describe
  */
 
+// FIXME main goes first to define GLIBC features, ouch
 #include "main.h"
 #include "clock.h"
+#include "event_loop.h"
 
 #include <signal.h>
 #include <stdlib.h>
@@ -41,7 +43,8 @@ configure(int argc, char *argv[])
 
   s->debug = false;
   s->prog_name = argv[0];
-  s->display_rpmsg_device_name = RPMSG_EP;
+  s->display_rpmsg_path = RPMSG_EP;
+  s->display_rpmsg_fd = -1;
   s->control_fifo_path = CONTROL_FIFO_PATH_DEFAULT;
   s->control_fifo_fd = -1;
 
@@ -73,9 +76,13 @@ configure(int argc, char *argv[])
 
 /* ********************************************************************** */
 
+// FIXME better way of passing state to signal handlers?
+static state_t s;
+
 static void
 cleanup(void)
 {
+  event_loop_cleanup(s);
 }
 
 /* Courtesy of http://www.cons.org/cracauer/sigint.html */
@@ -100,7 +107,7 @@ termination_handler(int sig)
 int
 main(int argc, char *argv[])
 {
-  state_t s;
+  int rv;
 
   if((s = configure(argc, argv)) == NULL) {
     exit(EXIT_FAILURE);
@@ -168,5 +175,9 @@ main(int argc, char *argv[])
    * when we terminate. */
   atexit(cleanup);
 
-  return 0;
+  dprintf(s, "Main thread init complete.\n");
+  rv = event_loop(s);
+  dprintf(s, "Main thread done.\n");
+
+  return rv;
 }

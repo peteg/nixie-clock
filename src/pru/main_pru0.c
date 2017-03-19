@@ -95,14 +95,6 @@ display_set_pending_val(digit_t digit, unsigned int new_val)
   digit_data[NUM_DIGITS - digit - 1].pending_val = new_val;
 }
 
-static inline uint8_t
-display_get_displayed_val(digit_t digit)
-{
-  struct digit_data *d = &digit_data[digit];
-
-  return d->displayed_val;
-}
-
 /* The maximum value here is DELAY_MAXIMUM.
  * Generated with fade.pl  */
 #define DELAY_MAXIMUM 0x3F
@@ -229,6 +221,12 @@ rpmsg_init(void)
   while (pru_rpmsg_channel(RPMSG_NS_CREATE, &transport, RPMSG_CHAN_NAME, PRU0_RPMSG_CHAN_DESC, PRU0_RPMSG_CHAN_PORT) != PRU_RPMSG_SUCCESS);
 }
 
+// FIXME seems we cannot do anything here.
+static void
+rpmsg_cleanup(void)
+{
+}
+
 static bool
 rpmsg_poll(void)
 {
@@ -244,7 +242,7 @@ rpmsg_poll(void)
     /* Receive all available messages, multiple messages can be sent per kick */
     while(pru_rpmsg_receive(&transport, &src, &dst, payload, &len) == PRU_RPMSG_SUCCESS) {
       static uint8_t halt[] = HALT;
-      const unsigned int length = sizeof(halt) / sizeof(uint8_t);
+      const unsigned int length = sizeof(halt) / sizeof(uint8_t) - 1;
       unsigned int i;
 
       for(i = 0; i < length; i++) {
@@ -286,7 +284,7 @@ main(void)
   }
 
   for(bool cont = true; cont; ) {
-    for(int i = 0; i < NUM_DIGITS; i++) {
+    for(int i = 0; i < NUM_DIGITS && cont; i++) {
       cont = rpmsg_poll();
       digit_task(i);
     }
@@ -294,5 +292,8 @@ main(void)
 
   ht_off();
   tubes_all_off();
+
+  rpmsg_cleanup();
+
   __halt();
 }

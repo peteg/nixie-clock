@@ -29,7 +29,8 @@ typedef struct state {
   char *prog_name;
 
   /* The RPMSG device for controlling the display. */
-  char *display_rpmsg_device_name;
+  char *display_rpmsg_path;
+  int display_rpmsg_fd;
 
   /* The remote-control FIFO. */
   char *control_fifo_path;
@@ -45,7 +46,6 @@ typedef struct state {
   char *pressure_path;
   double elevation; /* Elevation in metres, for correcting the pressure reading. */
   unsigned int bmp085_sample_time; /* Seconds between samples. */
-  struct bmp085 *bmp085;
 } *state_t;
 
 #define CONTROL_FIFO_PATH_DEFAULT "/tmp/clock_control"
